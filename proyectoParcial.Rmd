@@ -1,0 +1,174 @@
+---
+title: "Proyecto Parcial"
+author: "Luis E. Suarez & Mauricio Diaz"
+date: "2024-10-30"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+knitr::opts_chunk$set(echo = TRUE)
+data <- read.csv("datos_gasolineras.csv", row.names = 1)
+
+```
+
+## Descripción de variables a explorar
+En este análisis exploraremos como el cambio en el precio de compra de gasolina puede afectar el precio al que una gasolinera vende sus litros.
+Primero observemos como se distribuyen el precio al consumidor comparada con el precio al que lo compra la gasolinera.
+
+```{r grafica, echo = TRUE}
+ggplot(data)+
+  aes(ppc, selling_price)+
+  geom_point()+
+  theme_bw()
+```
+
+
+
+## Regresion lineal
+
+Con esto en mente generaremos un modelo de regresión lineal para crear una predicción sobre el precio de venta final dado el precio de compra.
+
+```{r modelo, include = TRUE}
+modelo <- lm(data = data, formula = selling_price ~ ppc)
+summary(modelo)
+```
+
+
+```{r regresion, echo = TRUE}
+x.barra <- mean(data$ppc)
+y.barra <- mean(data$selling_price)
+data$dif.x <- data$ppc - x.barra
+data$dif.y <- data$selling_price - y.barra
+data$dif.x_x_dif.y <- data$dif.x*data$dif.y
+b.1.est <- sum(data$dif.x_x_dif.y)/sum((data$dif.x)^2)
+b.0.est <- y.barra - b.1.est * x.barra
+cat("R: \n𝛽1=",b.1.est,"\n")
+cat("𝛽0=",b.0.est)
+```
+## Intervalo de confianza de 𝛽1
+
+Este resultado nos dice que por cada peso que aumenta el costo de la gasolina el precio de venta se aumenta en 0.804 pesos. Este valor lo estimamos pero con que confianza lo estamos diciendo. Para eso calculamos un intervalo con 95% de confianza para nuestra 𝛽1 estimada.
+
+```{r confianza 𝛽1, include=TRUE}
+beta.1.gorro <- modelo$coefficients[2]
+sigma.gorro <- sqrt(sum((data$selling_price - modelo$fitted.values)^2)/(23))
+sigma.beta.1.gorro <- sigma.gorro/sqrt(sum((data$ppc - mean(data$x))^2))
+cuantil <- qt(p = 0.975, df = 23)
+lim.inf <- beta.1.gorro - cuantil*sigma.beta.1.gorro
+lim.sup <- beta.1.gorro + cuantil*sigma.beta.1.gorro
+cat("R: \nlimite inferior:", lim.inf, "\n")
+cat("limite superior:", lim.sup)
+```
+## Intervalo de confianza de 𝛽0
+Haciendo el mismo procedimiento podemos adquirir un intervalo para 𝛽0 con un 95% de confianza.
+```{r confianza 𝛽0, include=TRUE}
+y.gorro <- b.0.est + b.1.est*data$ppc
+MSE <- sum((data$selling_price-y.gorro)^2)/(nrow(data)-2)
+se.b0.est <- 
+  sqrt(
+    MSE * 
+      (
+        1 / nrow(data) + 
+          mean(data$ppc)^2 / ((sum((data$ppc - mean(data$ppc))^2)))
+        )
+    )
+
+v.c <- qt(p = 0.95, df = nrow(data)-2)
+
+i.c.1 <- b.0.est - v.c*se.b0.est
+i.c.2 <- b.0.est + v.c*se.b0.est
+t.est <- b.0.est / se.b0.est
+cat("R: limite inferior= ", i.c.1, " limite superior= ", i.c.2)
+```
+## Predicción de datos internos
+Supongtamos que queremos estimar cual seria el precio de venta de la gasolina si el precio de venta fuera de 26.75 pesos. Usaremos el modelo para hacer una etsimación puntual y un intervalo con confianza del 95%.
+
+```{r prediccion interna, include=TRUE}
+prediccion <- predict(object = modelo, newdata = data.frame(ppc = 26.75))
+cat("Estimación puntual: ", prediccion, "\n")
+intervalo.interno <- predict(modelo, newdata = data.frame(ppc = 26.75), interval = "confidence", level = 0.95)
+cat("Intervalo con confianza del 95% de predicción: \nLimite inferior: ", intervalo.interno[2], " Limite superior: ", intervalo.interno[3])
+```
+```{r grafica intervalo interno, echo = TRUE}
+ggplot(data) +
+  aes(ppc, selling_price) +
+  geom_point(color = "gray", alpha = 0.6, size = 2) +
+  geom_smooth(method = 'lm', formula = y ~ x, se = FALSE) +
+  geom_errorbar(aes(x = 26.75, ymin = 26.41149, ymax = 26.58039), 
+                width = 0.5, color = "red", linetype = "solid") +
+  annotate("text", 
+           x = 26.75, 
+           y = 26.24, 
+           label = "95% Confidence Interval", 
+           color = "red", 
+           hjust = -0.1, 
+           vjust = -0.5, 
+           size = 3.5) +
+  labs(
+    title = "Prediccion sobre el precio de venta\n dado un precio de compra",
+    x = "Precio de compra (Pesos)",
+    y = "Precio de venta (Pesos)"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),  # Center and bold title
+    axis.title = element_text(face = "bold")  # Bold axis titles
+  )
+
+
+```
+
+## Predicción de nuevos datos
+## Predicción de datos internos
+Supongamos que queremos estimar cual seria el precio de venta de la gasolina si el precio de venta fuera de 26.75 pesos como un nuevo dato. Usaremos el modelo para hacer una etsimación puntual y un intervalo con confianza del 95%.
+
+```{r prediccion externa, include=TRUE}
+cat("Estimación puntual: ", prediccion, "\n")
+intervalo.externo <- predict(modelo, newdata = data.frame(ppc = 26.75), interval = "prediction", level = 0.95)
+cat("Intervalo con confianza del 95% de predicción: \nLimite inferior: ", intervalo.externo[2], " Limite superior: ", intervalo.externo[3])
+```
+
+```{r grafica intervalo externo, echo = TRUE}
+ggplot(data) +
+  aes(ppc, selling_price) +
+  geom_point(color = "gray", alpha = 0.6, size = 2) +
+  geom_smooth(method = 'lm', formula = y ~ x, se = FALSE) +
+  geom_errorbar(aes(x = 26.75, ymin = intervalo.externo[2], ymax = intervalo.externo[3]), 
+                width = 0.5, color = "red", linetype = "solid") +
+  annotate("text", 
+           x = 26.75, 
+           y = 26.24, 
+           label = "95% Confidence Interval", 
+           color = "red", 
+           hjust = -0.1, 
+           vjust = -0.5, 
+           size = 3.5) +
+  labs(
+    title = "Prediccion sobre el precio de venta\n dado un precio de compra nuevo",
+    x = "Precio de compra (Pesos)",
+    y = "Precio de venta (Pesos)"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),  # Center and bold title
+    axis.title = element_text(face = "bold")  # Bold axis titles
+  )
+```
+## Prueba F para 𝛽1
+Realizamos una prueba F para 𝛽1 con la intención de determinar si hay posibilidad de que de la relación entre en precio de venta y el precio d ecompra no tenga relación.
+```{r prueba F, include=TRUE}
+summary_modelo <- summary(modelo)
+f_estadistico <- summary_modelo$fstatistic[1]
+f_grados_libertad1 <- summary_modelo$fstatistic[2]
+f_grados_libertad2 <- summary_modelo$fstatistic[3]
+f_p_valor <- pf(f_estadistico, f_grados_libertad1, f_grados_libertad2, lower.tail = FALSE)
+cat("R: el valor p es de: ", f_p_valor, ", por lo tanto se rechaza la hipotesis de 𝛽1=0 con 95% de confianza.")
+```
+
+## Interpretación de R2 en la regresión
+```{r analisis de R, include =TRUE}
+r_squared <- summary(modelo)$r.squared
+cat("Valor de R^2: ", r_squared)
+```
+
