@@ -1,0 +1,441 @@
+---
+title: "Proyecto Estadistica Aplicada 2"
+author: "Mauricio Diaz 200854, Luis Eduardo Suarez"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    keep_tex: true
+header-includes:
+   - \usepackage{pdflscape}
+   - \usepackage{booktabs}
+   - \usepackage{longtable}
+   - \usepackage{array}
+   - \usepackage{multirow}
+   - \usepackage{wrapfig}
+   - \usepackage{float}
+   - \usepackage{colortbl}
+   - \usepackage{pdflscape}
+   - \usepackage{tabu}
+   - \usepackage{threeparttable}
+   - \usepackage[normalem]{ulem}
+
+---
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(stargazer)
+library(psych)
+library(lmtest)
+library(car)
+library(lmtest)
+
+df <- read.csv('tfinal (1).csv')
+
+```
+
+# Objetivo 
+
+Contexto: La base de datos ve los datos mensuales de aproximadamente 1200 estaciones de gas en todo México, distribuidos de manera aleatoria, basados en los datos para guardar información para crear dashboards sobre ellos
+
+Objetivo: El objetivo del estudio es hacer un analisis sobre las ventas de estacion de gas. De esta manera desarrollar un modelo que nos permita tanto dar pronosticos como interpretaciones generales para lograr entender y ver que cambios hacer.
+
+Las variables son las siguientes
+
+##### Descripción de Variables
+
+```{r message=FALSE, warning=FALSE,echo=FALSE, results='asis'}
+
+# Crear el data frame en R
+tabla_descriptiva <- data.frame(
+  Variable = c(
+    "cre_id", "sales", "date", "selling_price", "ppc", "quotient",
+    "global", "comps1km", "comps1km_2km", "comps2km_5km", "comps5km_10km",
+    "comps10km_plus", "municipio", "entidad", "population", "Cars",
+    "Pib per capita", "Pib"
+  ),
+  Descripción = c(
+    "ID de la estación de gas",
+    "Ventas mensuales de la estación de gas, medida en litros de gas",
+    "Mes de las ventas en particular en agosto",
+    "Precio de venta de un litro de gas",
+    "Precio de compra de gas aproximado",
+    "Índice: >1 indica precios mayores que la competencia; <1, precios menores.",
+    
+    
+    "Nivel de tráfico alrededor de la gasolinera medida de 1 a 10",
+    "# de estaciones de gas a 1km",
+    "# de estaciones de gas 1 a 2km",
+    "# de estaciones de gas 2 a 5km",
+    "# de estaciones de gas 5 a 10km",
+    "# de estaciones de gas a más de 10km",
+    "Municipio en el que se encuentra la estación de gas",
+    "Estado en el que se encuentra la estación de gas",
+    "Población del municipio en el que se encuentra la estación del gas",
+    "Número de carros en el municipio",
+    "PIB per cápita del estado",
+    "PIB del estado"
+  )
+)
+
+stargazer(
+  tabla_descriptiva,
+  summary = FALSE,
+  type = "latex",
+  title = "Tabla Descriptiva para Variables",
+  rownames = FALSE
+)
+
+
+```
+# Analisis Exploratorio de Datos
+
+El objetivo general de esta seccion es comprender la relación entre las variables independientes y la variable dependiente. Esto implica analizar la distribución de las variables, explorar posibles correlaciones y patrones entre las variables predictoras y la respuesta, identificar relaciones lineales o no lineales. También se busca detectar anomalías o valores atípicos que puedan influir en el modelo. Esta parte nos  permite tanto tomar  decisiones informadas como respondernos preguntas sobre el comportamiento de las variables para ajustar un modelo de regresión que sea interpretable.
+
+
+## Estadisticas Descriptivas
+
+```{r message=FALSE, warning=FALSE,echo=FALSE, results='asis'}
+#Estadistica descriptiva
+
+df <- df %>% select(-X, -cre_id, -date)
+
+ss <- stargazer(df, 
+                type = "latex",
+                title = "Estadistica Descriptiva")
+
+
+```
+
+## Porcentaje de Nulos en los Datos
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+
+null_table <- data.frame(
+  column = names(df),
+  null_count = colSums(is.na(df)),
+  null_percentage = round(colSums(is.na(df))/nrow(df)*100, 2)
+)
+# Sort by null count descending
+summary_table <- null_table[order(-null_table$null_count),]
+knitr::kable(summary_table)
+
+```
+## Distribucion General de la variable Objetivo
+
+Aqui damos una visualización de la distribución general de la variable objetivo mediante un grafico de barras
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+# Distribution of sales
+p1 <- ggplot(df, aes(x = sales)) +
+  geom_histogram(fill = "steelblue", bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of Gas Sales", x = "Sales (liters)", y = "Count")
+p1
+
+```
+
+En esta seccion elegimos usar una grafico de Caja para mostrar el comportamiento general de la variable objetivo y los valores que logra tener.
+
+## Vista simple de Valores Atipicos en la variable Objetivo
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+ggplot(df, aes(x=sales)) + 
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title="Sales Distribution")
+
+```
+
+
+## Busqueda de Valores Atipicos en variables Independientes
+
+Con la tabla siguiente buscamos dar
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+
+get_outliers <- function(x) {
+  q1 <- quantile(x, 0.05, na.rm = TRUE)
+  q3 <- quantile(x, 0.95, na.rm = TRUE)
+  iqr <- q3 - q1
+  lower <- q1 - 1.5 * iqr
+  upper <- q3 + 1.5 * iqr
+  sum(x < lower | x > upper, na.rm = TRUE)
+}
+
+summary_table$outlier_count <- sapply(df, function(x) {
+  if(is.numeric(x)) get_outliers(x) else 0
+}) 
+
+knitr::kable(summary_table)
+
+
+```
+
+## Analisis de Correlacion entre las variables
+
+Lo que estamos haciendo en esta seccion es generar una matriz de correlacion para ver la interaccion entre las variables y su comportamiento. Esto no lo estamos usando como metodo en este caso pero tambien nos permite ver multicolinealidad.
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+# Correlation analysis
+numeric_cols <- df %>% 
+  select(sales, selling_price, ppc, quotient, global, 
+         comps1km, comps1km_2km, comps2km_5km, comps5km_10km, 
+         comps10km_plus, population, Cars, PIB) %>%
+  cor(use="complete.obs")
+
+
+pairs.panels(numeric_cols,   # plot distributions and correlations for all the data
+             gap = 0,
+             lm = TRUE)
+
+```
+
+
+## Analisis de variable de precio con Ventas
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+
+# Sales vs Price scatter plot
+p3 <- ggplot(df, aes(x = selling_price, y = sales)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +
+  theme_minimal() +
+  labs(title = "Sales vs Price", x = "Selling Price", y = "Sales")
+p3
+
+
+```
+
+# Ajuste del Modelo
+
+En esta seccion ya llegamos al ajuste del modelo.
+
+Tenemos el siguiente modelo donde,
+
+ - Variable Objetivo (Y): Ventas
+ - Variable Dependientes (X): precio, trafico, ppc, quotient...
+
+$$
+Y = X\beta + \epsilon
+$$
+
+```{r message=FALSE, warning=FALSE,echo=FALSE,results='asis'}
+
+prep <- df %>% select(-municipio, -entidad)
+model <- prep %>% lm(sales ~ ., data=.)
+
+stargazer(model, type='latex', font.size = 'small')
+
+
+```
+---
+
+
+---
+
+
+---
+# Analisis de los estimadores
+
+En esta seccion vamos a ver de manera particular cada uno de los estimadores de Regresion, los coeficientes, tuvimos la oportunidad de ver cada uno al ajustar el modelo en esta seccion podremos ver:
+
+ - varianza
+ 
+ - Y gorro estimacion
+ 
+ - Y gorro pronostico
+
+## Varianza
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+#Varianza
+
+residual_variance <- sqrt(summary(model)$sigma^2)
+
+
+```
+
+## sigma = 252774.9 
+
+Podemos ver que tenemos una varianza de 252774.9, no estamos asumiendo una varianza fija ya que puede haber heterestadicistidad, pero estamos usando la varianza que nos da el valor del modelo
+
+
+
+## Prediccion Dato Interno
+
+Queremos ver la estimacion general para datos interno de una gasolinera con los siguientes datos 
+
+ - selling_price = 24.96989,
+ - ppc = 25.01667,
+ - quotient = 0.9982151,
+ - flag_min = 0,
+ - global = 6.552333,
+ - comps1km = 0,
+ - comps1km_2km = 2,
+ - comps2km_5km = 11,
+ - comps5km_10km = 7,
+ - comps10km_plus = 0,
+ - population = 35223,
+ - Cars = 4029,
+ - PIB.per.cápita..MXN. = 165567,
+ - PIB = 1086962
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+#Y barra
+
+nuevo <- data.frame(
+  selling_price = 24.96989,
+  ppc = 25.01667,
+  quotient = 0.9982151,
+  flag_min = 0,
+  global = 6.552333,
+  comps1km = 0,
+  comps1km_2km = 2,
+  comps2km_5km = 11,
+  comps5km_10km = 7,
+  comps10km_plus = 0,
+  population = 35223,
+  Cars = 4029,
+  PIB.per.cápita..MXN. = 165567,
+  PIB = 1086962
+)
+
+confY <- predict(model, nuevo, interval = "confidence", level=0.95)
+
+
+
+```
+
+
+### Ybarra = 399911.5 
+
+### CI = (356883.8, 442939.2)
+
+
+Podemos ver en la seccion pasado que tenemos una estimacion de 399911.5.
+ 
+
+
+## Pronostico De Dato
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+#Y barra
+
+
+confYPred <- predict(model, nuevo, interval = "prediction", level=0.95)
+
+
+
+```
+
+
+### YbarraPronostico = 399911.5 
+
+### CI = (-98070.02, 897893.1)
+
+
+Podemos ver el mismo pronostico que tiene el mismo valor pero cambia el intervalo de confianza y vemos que cruza el 0. El intervalo de predicción cruza el 0 porque esto puede ser porque incluye tanto la incertidumbre del modelo como la variabilidad de las predicciones individuales. Esto puede indicar que hay alta variabilidad en los residuos del modelo.
+
+
+## Anova
+
+Queremos lograr entender de donde se origina la variacion de Y barra es por eso que hacemos un analisis de varianza (anova) que nos ayuda a entender como cada variable independiente explica la variacion total en los datos.
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+#ANOVA
+
+anova(model)
+
+
+```
+Podemos ver que en este caso la suma de cuadrados de los residuales es mayor a cualquier de los ajustes de los parametros lo que nos indica que la variacion de las ventas no es explicada por el modelo. Podemos ver de la misma manera como la tabla anova.
+
+
+# Diagnostico del modelo
+
+
+# Analisis de Residuales
+
+# Residuales con una de las variables
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+
+prep2 <- na.omit(prep)
+
+prep2$residuals <- model$residuals
+
+prep2$fitted.values <- model$fitted.values
+
+p1 <- ggplot(data = prep2) +
+  aes(x = selling_price, y = residuals) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  theme_classic() +
+  labs(title = 'Residuales Vs. Variable explicativa', subtitle = 'Prices')
+
+p1
+
+```
+
+# Residuales y fitted values
+
+## heteroesquedasticidad
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+p2 <- ggplot(data = prep2) +
+  aes(x = fitted.values, y = residuals) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  theme_classic() +
+  labs(title = 'Y est. Vs. Residuales')
+
+p2
+
+#heteroesquedasticidad
+
+#estadistica de BREUSCH-PAGAN
+
+
+bptest(model)
+
+```
+
+
+
+# Linealidad
+## Rainbow test
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+
+raintest(formula = sales ~ ., data = prep)
+```
+
+# Normalidad
+## qqplot
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+
+p3 <- ggplot(prep2, aes(sample = sales)) +
+  stat_qq() +
+  stat_qq_line(color = "blue") +
+  ggtitle("Q-Q Plot of Values") +
+  theme_minimal()
+
+p3
+
+#prueba Shapiro wilk
+
+result<- shapiro.test(prep$sales)
+
+```
+
+# Multicolinealidad
+
+## VIF
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+vif(model)
+
+```
+
