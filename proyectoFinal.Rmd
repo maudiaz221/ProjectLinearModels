@@ -417,7 +417,7 @@ El análisis de arcoiris indica que el modelo para predecir ventas no presenta p
 
 ```{r message=FALSE, warning=FALSE,echo=FALSE}
 
-p3 <- ggplot(prep2, aes(sample = sales)) +
+p3 <- ggplot(prep2, aes(sample = residuals)) +
   stat_qq() +
   stat_qq_line(color = "blue") +
   ggtitle("Q-Q Plot of Values") +
@@ -425,12 +425,26 @@ p3 <- ggplot(prep2, aes(sample = sales)) +
 
 p3
 
-#prueba Shapiro wilk
-
-result<- shapiro.test(prep$sales)
 
 ```
-Por el tipo de curva con el que se colocan los datos en la prueba de normalidad encontramos que hay un patrón que se aleja a la distribución normal. En este caso en especifico encontramos que los datos tienen un desvio hacia la derecha. Probando que el modelo tiene un desvio, pero puede ser influenciado por las otras pruebas que no han sido medidas.
+Por el tipo de curva con el que se colocan los datos en la prueba de normalidad encontramos que hay un patrón que se aleja a la distribución normal. En este caso en especifico encontramos que los datos tienen un desvio hacia la derecha. Probando que el modelo tiene un desvio, pero puede ser influenciado por las otras pruebas que no han sido medidas. El grafico parece indicar no normalidad en los residuales del modelo
+
+## Prueba Shapiro-Wilk
+
+De la misma manera analitacamente podemos determinar analiticamente si los residuales siguen una distribucion normal.
+
+Planteamos la siguiente prueba de hipotesis
+
+ - H0: los residuales siguen una distribucion normal
+
+ - H1: los residuales siguen una distribucion no normal
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+
+shapiro.test(prep2$residuals)
+
+```
+Como vemos el tenemos un valor menor a 0.01 lo que nos demuestra que hay evidencia suficiente para rechazar la hipotesis nula y podemos asegurar que los residuales no siguen el supuesto de normalidad.
 
 # Multicolinealidad
 
